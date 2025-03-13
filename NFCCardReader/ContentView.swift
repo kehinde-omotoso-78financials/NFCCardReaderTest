@@ -59,21 +59,53 @@ struct ContentView: View {
         }
     }
     
+    //    private func startScanning() {
+    //        guard NFCTagReaderSession.readingAvailable else {
+    //            errorMessage = "NFC scanning is not supported on this device"
+    //            showError = true
+    //            return
+    //        }
+    //
+    //        isScanning = true
+    //
+    //        // Add timeout handler
+    //        DispatchQueue.main.asyncAfter(deadline: .now() + 20) {
+    //            if isScanning {
+    //                isScanning = false
+    //            }
+    //        }
+    //
+    //        nfcReader.startScanning { result in
+    //            DispatchQueue.main.async {
+    //                isScanning = false
+    //
+    //                switch result {
+    //                case .success(let data):
+    //                    cardData = data
+    //                case .failure(let error):
+    //                    if let nfcError = error as? NFCReaderError,
+    //                       nfcError.code == .readerSessionInvalidationErrorUserCanceled {
+    //                        // Don't show error for user cancellation
+    //                        return
+    //                    }
+    //                    errorMessage = error.localizedDescription
+    //                    showError = true
+    //                }
+    //            }
+    //        }
+    //    }
+    
     private func startScanning() {
+        print("Start scanning button tapped") // Debug print
+        
         guard NFCTagReaderSession.readingAvailable else {
+            print("NFC not available on this device") // Debug print
             errorMessage = "NFC scanning is not supported on this device"
             showError = true
             return
         }
-        
+        print("NFC is available, starting scan...") // Debug print
         isScanning = true
-        
-        // Add timeout handler
-        DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
-            if isScanning {
-                isScanning = false
-            }
-        }
         
         nfcReader.startScanning { result in
             DispatchQueue.main.async {
@@ -81,11 +113,12 @@ struct ContentView: View {
                 
                 switch result {
                 case .success(let data):
+                    print("Card data received successfully") // Debug print
                     cardData = data
                 case .failure(let error):
+                    print("Scan failed with error: \(error.localizedDescription)") // Debug print
                     if let nfcError = error as? NFCReaderError,
                        nfcError.code == .readerSessionInvalidationErrorUserCanceled {
-                        // Don't show error for user cancellation
                         return
                     }
                     errorMessage = error.localizedDescription
