@@ -61,32 +61,32 @@ class NFCCardReaderBase: NSObject, NFCTagReaderSessionDelegate {
     
     
     func startScanning(completion: @escaping (Result<CardData, Error>) -> Void) {
-        // Ensure any existing session is invalidated
-        session?.invalidate()
-        session = nil
-        
-        print("Starting NFC scan...")
-        
-        guard NFCTagReaderSession.readingAvailable else {
-            print("NFC not available")
-            DispatchQueue.main.async {
+        // Always operate on main thread for session management
+        DispatchQueue.main.async {
+            // Cleanup any existing session
+            self.session?.invalidate()
+            self.session = nil
+            self.completionHandler = nil
+            
+            print("Starting NFC scan...")
+            
+            guard NFCTagReaderSession.readingAvailable else {
+                print("NFC not available")
                 completion(.failure(NFCError.readerNotAvailable))
+                return
             }
-            return
-        }
-        
-        // Store completion handler
-        self.completionHandler = completion
-        
-        // Create and begin NFC session with proper error handling
-        do {
-            session = NFCTagReaderSession(pollingOption: .iso14443, delegate: self)
-            session?.alertMessage = "Hold your iPhone near the payment card"
-            session?.begin()
-        } catch {
-            print("Failed to create NFC session: \(error)")
-            DispatchQueue.main.async {
-                completion(.failure(error))
+            
+            do {
+                // Initialize new session
+                self.completionHandler = completion
+                self.session = NFCTagReaderSession(pollingOption: .iso14443, delegate: self)
+//                self.session?.alertMessage = "Hold your iPhone near the payment card"
+                try self.session?.begin()
+            } catch {
+                print("Failed to create NFC session: \(error)")
+                self.completionHandler?(.failure(NFCError.readError(error.localizedDescription)))
+                self.completionHandler = nil
+                self.session = nil
             }
         }
     }
@@ -95,83 +95,88 @@ class NFCCardReaderBase: NSObject, NFCTagReaderSessionDelegate {
         print("NFC session became active")
     }
     
-    
     func tagReaderSession(_ session: NFCTagReaderSession, didInvalidateWithError error: Error) {
         print("NFC session invalidated with error: \(error.localizedDescription)")
         
-        // Clean up the session
-        self.session = nil
-        
         DispatchQueue.main.async { [weak self] in
-            // Only call completion handler if it hasn't been called yet
-            if let completion = self?.completionHandler {
-                completion(.failure(error))
-                self?.completionHandler = nil
-            }
-        }
-    }
-    
-    
-    //    func tagReaderSession(_ session: NFCTagReaderSession, didDetect tags: [NFCTag]) {
-    //        guard !isProcessing else { return }
-    //        isProcessing = true
-    //
-    //        // Ensure we have a valid tag
-    //        guard let firstTag = tags.first,
-    //              case .iso7816(let tag) = firstTag else {
-    //            session.invalidate(errorMessage: "Unsupported card type")
-    //            return
-    //        }
-    //
-    //        // Connect to the detected tag
-    //        session.connect(to: firstTag) { [weak self] error in
-    //            guard let self = self else { return }
-    //
-    //            if let error = error {
-    //                self.handleError(error, session: session)
-    //                return
-    //            }
-    //
-    //            self.processCard(tag, session: session)
-    //        }
-    //    }
-    
-    func tagReaderSession(_ session: NFCTagReaderSession, didDetect tags: [NFCTag]) {
-        print("NFC tags detected: \(tags.count)")
-        
-        // Ensure we only work with one tag at a time
-        guard let tag = tags.first else {
-            session.invalidate(errorMessage: "No valid card detected")
-            return
-        }
-        
-        // Connect to the detected tag
-        session.connect(to: tag) { [weak self] error in
             guard let self = self else { return }
             
-            if let error = error {
-                print("Connection error: \(error.localizedDescription)")
-                session.invalidate(errorMessage: error.localizedDescription)
-                return
-            }
+            // Clean up session
+            self.session = nil
             
-            // For testing purposes, return dummy data
-            // In a real implementation, you would read the card data here
-            let dummyData = CardData(
-                pan: "************1234",
-                expiryDate: "12/25",
-                cardholderName: "TEST CARD",
-                applicationLabel: "VISA",
-                aid: "A0000000031010"
-            )
-            
-            DispatchQueue.main.async { [weak self] in
-                self?.completionHandler?(.success(dummyData))
-                self?.completionHandler = nil
-                session.invalidate()
+            // Notify completion handler if it exists
+            if let completion = self.completionHandler {
+                completion(.failure(error))
+                self.completionHandler = nil
             }
         }
     }
+    
+    
+        func tagReaderSession(_ session: NFCTagReaderSession, didDetect tags: [NFCTag]) {
+            guard !isProcessing else { return }
+            isProcessing = true
+    
+            // Ensure we have a valid tag
+            guard let firstTag = tags.first,
+                  case .iso7816(let tag) = firstTag else {
+                session.invalidate(errorMessage: "Unsupported card type")
+                return
+            }
+    
+            // Connect to the detected tag
+            session.connect(to: firstTag) { [weak self] error in
+                guard let self = self else { return }
+    
+                if let error = error {
+                    self.handleError(error, session: session)
+                    return
+                }
+    
+                self.processCard(tag, session: session)
+            }
+        }
+    
+//    func tagReaderSession(_ session: NFCTagReaderSession, didDetect tags: [NFCTag]) {
+//        print("NFC tags detected: \(tags.count)")
+//        
+//        guard let tag = tags.first else {
+//            DispatchQueue.main.async {
+//                session.invalidate(errorMessage: "No valid card detected")
+//            }
+//            return
+//        }
+//        
+//        // Connect to the detected tag
+//        session.connect(to: tag) { [weak self] error in
+//            DispatchQueue.main.async {
+//                guard let self = self else {
+//                    session.invalidate(errorMessage: "Internal error")
+//                    return
+//                }
+//                
+//                if let error = error {
+//                    print("Connection error: \(error.localizedDescription)")
+//                    session.invalidate(errorMessage: error.localizedDescription)
+//                    return
+//                }
+//                
+//                // For testing - simulate successful read with dummy data
+//                let dummyData = CardData(
+//                    pan: "************1234",
+//                    expiryDate: "12/25",
+//                    cardholderName: "TEST CARD",
+//                    applicationLabel: "VISA",
+//                    aid: "A0000000031010"
+//                )
+//
+//
+//                self.completionHandler?(.success(dummyData))
+//                self.completionHandler = nil
+//                session.invalidate()
+//            }
+//        }
+//    }
     
     private func processCard(_ tag: NFCISO7816Tag, session: NFCTagReaderSession) {
         guard isSessionActive else { return }
@@ -305,6 +310,7 @@ class NFCCardReaderBase: NSObject, NFCTagReaderSessionDelegate {
     }
     
     private func readRecords(afl: [UInt8], tag: NFCISO7816Tag, session: NFCTagReaderSession) {
+        print("::::::READING RECORDS::::::::")
         var cardData = CardData(isSuccess: true)
         var remainingRecords = afl.count / 4
         
@@ -372,6 +378,7 @@ class NFCCardReaderBase: NSObject, NFCTagReaderSessionDelegate {
     }
     
     private func parseRecordData(_ data: Data, into cardData: inout CardData) {
+        print(":::::::::PARSING RECORD:::::")
         // Parse PAN
         if let pan = findTag(EMVTags.PAN, in: data) {
             cardData.pan = pan.hexString
